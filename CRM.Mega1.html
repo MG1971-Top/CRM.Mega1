@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CRM Megacable</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"/>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body { background-color: #f4f6f9; color: #333; }
+    .card-prospecto { margin-bottom: 1rem; }
+    .bg-alta { background-color: #d4edda; }
+    .bg-media { background-color: #fff3cd; }
+    .bg-baja { background-color: #f8d7da; }
+  </style>
+</head>
+<body>
+<div class="container py-4">
+  <h1 class="text-center mb-4">CRM Megacable - Gestión de Prospectos</h1>
+  <!-- Login / Registro -->
+  <div id="login-section">
+    <h3>Login</h3>
+    <input type="email" id="loginEmail" placeholder="Correo electrónico" class="form-control mb-2">
+    <input type="text" id="loginVendedor" placeholder="Número de vendedor" class="form-control mb-2">
+    <button class="btn btn-primary mb-3" onclick="loginUser()">Ingresar</button>
+    <p>¿No tienes cuenta? <a href="#" onclick="toggleRegister(true)">Regístrate</a></p>
+    <p><a href="#" onclick="recoverPassword()">¿Olvidaste tu contraseña?</a></p>
+  </div>
+
+  <div id="register-section" style="display: none;">
+    <h3>Registro</h3>
+    <input type="email" id="registerEmail" placeholder="Correo electrónico" class="form-control mb-2">
+    <input type="password" id="registerPassword" placeholder="Contraseña" class="form-control mb-2">
+    <button class="btn btn-success" onclick="registerUser()">Registrar</button>
+    <button class="btn btn-secondary" onclick="toggleRegister(false)">Cancelar</button>
+  </div>
+
+  <!-- Registro de prospectos -->
+  <div id="main-section" style="display: none;">
+    <h3 class="mt-4">Nuevo Prospecto</h3>
+    <div class="row g-3">
+      <div class="col-md-4"><input type="text" id="nombre" class="form-control" placeholder="Nombre del prospecto"></div>
+      <div class="col-md-4"><input type="text" id="direccion" class="form-control" placeholder="Dirección"></div>
+      <div class="col-md-4"><input type="tel" id="telefono" class="form-control" placeholder="Teléfono a 10 dígitos"></div>
+      <div class="col-md-4">
+        <select id="paquete" class="form-select">
+          <option>100mb</option>
+          <option>200mb</option>
+          <option>300mb</option>
+          <option>500mb</option>
+          <option>1000mb</option>
+        </select>
+      </div>
+      <div class="col-md-4">
+        <select id="prioridad" class="form-select">
+          <option value="alta">Alta</option>
+          <option value="media">Media</option>
+          <option value="baja">Baja</option>
+        </select>
+      </div>
+      <div class="col-md-4">
+        <button class="btn btn-primary w-100" onclick="crearProspecto()">Guardar Prospecto</button>
+      </div>
+    </div>
+
+    <hr/>
+    <div class="d-flex justify-content-between mb-2">
+      <div>
+        <button class="btn btn-outline-success" onclick="exportarTodos('excel')">Exportar a Excel</button>
+        <button class="btn btn-outline-info" onclick="exportarTodos('google')">Exportar a Google Sheets</button>
+      </div>
+      <button class="btn btn-danger" onclick="borrarTodos()">Borrar Todos</button>
+    </div>
+
+    <div class="row" id="prospectos-lista"></div>
+
+    <canvas id="graficaPrioridad" height="100"></canvas>
+  </div>
+</div>
+
+<!-- Firebase SDK -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/11.7.1/firebase-app.js";
+  import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/11.7.1/firebase-auth.js";
+  import { getFirestore, collection, addDoc, getDocs, deleteDoc, doc } from "https://www.gstatic.com/firebasejs/11.7.1/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyABcR-SwwTs8C-LQ30AKfn6QJdF6x1ZNAc",
+    authDomain: "crm-mega-28426.firebaseapp.com",
+    projectId: "crm-mega-28426",
+    storageBucket: "crm-mega-28426.appspot.com",
+    messagingSenderId: "306429468542",
+    appId: "1:306429468542:web:4203f38eda8637f3315d2f"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth();
+  const db = getFirestore();
+
+  window.toggleRegister = function (show) {
+    document.getElementById('register-section').style.display = show ? 'block' : 'none';
+    document.getElementById('login-section').style.display = show ? 'none' : 'block';
+  }
+
+  window.registerUser = async function () {
+    const email = document.getElementById('registerEmail').value;
+    const password = document.getElementById('registerPassword').value;
+    try {
+      await createUserWithEmailAndPassword(auth, email, password);
+      alert("Usuario registrado exitosamente.");
+      toggleRegister(false);
+    } catch (error) {
+      alert(error.message);
+    }
+  }
+
+  window.loginUser = async function () {
+    const email = document.getElementById('loginEmail').value;
+    const vendedor = document.getElementById('loginVendedor').value;
+    try {
+      await signInWithEmailAndPassword(auth, email, vendedor);
+      document.getElementById('login-section').style.display = 'none';
+      document.getElementById('main-section').style.display = 'block';
+      cargarProspectos();
+    } catch (error) {
+      alert("Error de inicio de sesión");
+    }
+  }
+
+  window.recoverPassword = async function () {
+    const email = prompt("Ingresa tu correo para recuperar contraseña");
+    try {
+      await sendPasswordResetEmail(auth, email);
+      alert("Correo enviado");
+    } catch (error) {
+      alert("Error al enviar recuperación");
+    }
+  }
+
+  window.crearProspecto = async function () {
+    const folio = "FOLIO-" + Date.now();
+    const prospecto = {
+      folio,
+      nombre: document.getElementById('nombre').value,
+      direccion: document.getElementById('direccion').value,
+      telefono: document.getElementById('telefono').value,
+      paquete: document.getElementById('paquete').value,
+      prioridad: document.getElementById('prioridad').value,
+      fecha: new Date().toISOString()
+    };
+    await addDoc(collection(db, 'prospectos'), prospecto);
+    cargarProspectos();
+  }
+
+  async function cargarProspectos() {
+    const contenedor = document.getElementById('prospectos-lista');
+    contenedor.innerHTML = '';
+    const snapshot = await getDocs(collection(db, 'prospectos'));
+    let conteo = { alta: 0, media: 0, baja: 0 };
+    snapshot.forEach(docu => {
+      const p = docu.data();
+      conteo[p.prioridad]++;
+      const card = document.createElement('div');
+      card.className = `col-md-4 card-prospecto bg-${p.prioridad}`;
+      card.innerHTML = `
+        <div class="card p-3">
+          <h5>${p.nombre} (${p.folio})</h5>
+          <p>${p.direccion} - ${p.telefono}</p>
+          <p>Paquete: ${p.paquete} | Prioridad: ${p.prioridad}</p>
+          <button class="btn btn-sm btn-outline-danger" onclick="borrarProspecto('${docu.id}')">Eliminar</button>
+        </div>`;
+      contenedor.appendChild(card);
+    });
+    actualizarGrafica(conteo);
+  }
+
+  window.borrarProspecto = async function (id) {
+    await deleteDoc(doc(db, 'prospectos', id));
+    cargarProspectos();
+  }
+
+  window.borrarTodos = async function () {
+    const snapshot = await getDocs(collection(db, 'prospectos'));
+    snapshot.forEach(async d => await deleteDoc(doc(db, 'prospectos', d.id)));
+    cargarProspectos();
+  }
+
+  function actualizarGrafica(conteo) {
+    const ctx = document.getElementById('graficaPrioridad').getContext('2d');
+    new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: ['Alta', 'Media', 'Baja'],
+        datasets: [{
+          label: '# de Prospectos',
+          data: [conteo.alta, conteo.media, conteo.baja],
+          backgroundColor: ['green', 'orange', 'red']
+        }]
+      },
+      options: {
+        responsive: true,
+        scales: { y: { beginAtZero: true } }
+      }
+    });
+  }
+
+  window.exportarTodos = function (tipo) {
+    alert(`Exportar a ${tipo} aún no implementado. Se agregará pronto.`);
+  }
+</script>
+</body>
+</html>
